@@ -1,7 +1,7 @@
 """
 Loads the raw Twitter customer-support CSV, filters to one brand, and
 reconstructs (customer_message -> brand_reply) pairs using the
-response_tweet_id / in_reply_to_status_id link columns.
+response_tweet_id / in_response_to_tweet_id link columns.
 
 USAGE:
     python src/data_prep/load_dataset.py
@@ -12,9 +12,25 @@ Columns: customer_text, brand_reply_text, customer_tweet_id, brand_tweet_id
 import pandas as pd
 from pathlib import Path
 import sys
+from langdetect import detect, LangDetectException
+from tqdm import tqdm
 
 sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
 from src.config import RAW_CSV, PROCESSED_DIR, BRAND
+
+tqdm.pandas()
+
+
+def is_english(text: str) -> bool:
+    """Best-effort English filter. Short/emoji-only text often fails
+    detection — those get dropped too, which is fine (too little
+    signal to classify reliably anyway)."""
+    if not isinstance(text, str) or len(text.strip()) < 3:
+        return False
+    try:
+        return detect(text) == "en"
+    except LangDetectException:
+        return False
 
 
 def load_raw(path=RAW_CSV) -> pd.DataFrame:
@@ -25,14 +41,14 @@ def load_raw(path=RAW_CSV) -> pd.DataFrame:
             f"(thoughtvector/customer-support-on-twitter) and save it here as twcs.csv"
         )
     df = pd.read_csv(path, dtype={"tweet_id": str, "response_tweet_id": str,
-                                   "in_reply_to_status_id": str})
+                                   "in_response_to_tweet_id": str})
     return df
 
 
 def reconstruct_pairs(df: pd.DataFrame, brand: str = BRAND) -> pd.DataFrame:
     """
     Real dataset logic: a brand-side tweet has inbound == False and
-    author_id == brand. Its in_reply_to_status_id points to the customer
+    author_id == brand. Its in_response_to_tweet_id points to the customer
     tweet_id it's replying to. We join on that.
     """
     df["inbound"] = df["inbound"].astype(str).str.lower().isin(["true", "1"])
@@ -42,7 +58,7 @@ def reconstruct_pairs(df: pd.DataFrame, brand: str = BRAND) -> pd.DataFrame:
 
     merged = brand_replies.merge(
         customer_msgs,
-        left_on="in_reply_to_status_id",
+        left_on="in_response_to_tweet_id",
         right_on="tweet_id",
         suffixes=("_brand", "_customer"),
     )
@@ -61,6 +77,19 @@ def reconstruct_pairs(df: pd.DataFrame, brand: str = BRAND) -> pd.DataFrame:
     return pairs.reset_index(drop=True)
 
 
+def filter_english(pairs: pd.DataFrame) -> pd.DataFrame:
+    """Keep only pairs where the customer message is detected as English.
+    Documented decision: non-English tweets dropped to keep intent
+    taxonomy and evaluation consistent within the project's time budget
+    (see decision_log.md)."""
+    print("Detecting language on customer messages (this takes a minute on large sets)...")
+    mask = pairs["customer_text"].progress_apply(is_english)
+    before = len(pairs)
+    pairs = pairs[mask].reset_index(drop=True)
+    print(f"Language filter: {before} -> {len(pairs)} pairs kept ({len(pairs)/before:.1%} English)")
+    return pairs
+
+
 def main():
     print(f"Loading raw data from {RAW_CSV}...")
     df = load_raw()
@@ -69,6 +98,8 @@ def main():
     print(f"Filtering + reconstructing pairs for brand: {BRAND}")
     pairs = reconstruct_pairs(df, BRAND)
     print(f"Reconstructed {len(pairs)} customer->brand reply pairs.")
+
+    pairs = filter_english(pairs)
 
     if len(pairs) == 0:
         print(f"WARNING: 0 pairs found for brand '{BRAND}'. Check that this "
