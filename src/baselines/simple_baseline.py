@@ -28,6 +28,9 @@ INTENT_KEYWORDS = {
     "account_login_issue": ["can't log in", "cannot login", "password reset", "invalid password"],
     "prime_membership_question": ["prime member", "prime membership", "prime benefits"],
     "positive_feedback": ["thank you", "thanks so much", "love", "great service", "appreciate"],
+    "customer_discontent": ["bad service", "worst service", "doesn't care", "disgusted",
+                          "arrogant", "rude", "unwilling to help", "sad success",
+                          "not happy", "unhappy", "so done with", "screenshots"],
 }
 DEFAULT_INTENT = "product_or_shipping_inquiry"
 

@@ -7,3 +7,4 @@ data/raw/*.csv
 *.egg-info/
 .ipynb_checkpoints/
 .DS_Store
+data/processed/*_embeddings.pkl

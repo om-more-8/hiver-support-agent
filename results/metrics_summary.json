@@ -1,0 +1,20 @@
+[
+  {
+    "system_name": "trivial_baseline",
+    "n_examples": 200,
+    "intent_accuracy": 0.29,
+    "intent_macro_f1": 0.045,
+    "escalation_precision": 0.595,
+    "escalation_recall": 1.0,
+    "escalation_f1": 0.7461
+  },
+  {
+    "system_name": "simple_baseline",
+    "n_examples": 200,
+    "intent_accuracy": 0.375,
+    "intent_macro_f1": 0.325,
+    "escalation_precision": 0.7561,
+    "escalation_recall": 0.2605,
+    "escalation_f1": 0.3875
+  }
+]
