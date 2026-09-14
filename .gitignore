@@ -8,3 +8,4 @@ data/raw/*.csv
 .ipynb_checkpoints/
 .DS_Store
 data/processed/*_embeddings.pkl
+secrets.txt
