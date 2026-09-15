@@ -1,0 +1,7 @@
+{
+  "n_scored": 40,
+  "exact_match_rate": 0.7,
+  "within_1_point_rate": 1.0,
+  "spearman_correlation": 0.6887,
+  "mean_absolute_difference": 0.3
+}
