@@ -1,49 +1,69 @@
 """
 Decides auto-handle vs escalate-to-human, with a stated reason.
-Rule-based on top of intent + classifier confidence + risk keyword
-signals — deliberately NOT another LLM call. An escalation gate should
-be predictable and auditable, not another black box; this mirrors the
-keyword-boosted risk scoring approach from CogniClause.
+
+REVISED APPROACH (see decision log): the original pure rule-based
+version scored identically to the simple baseline (same keyword logic)
+and had weak recall (0.26) — missing most cases that should actually
+escalate. This version uses LLM judgment for the nuanced call, with a
+small keyword safety net that FORCES escalate=True on unambiguous
+red-flag terms regardless of what the LLM says — a deliberate design
+choice so guaranteed-risk language never slips through on an LLM
+misjudgment.
 
 USAGE:
     from src.escalation.decide import EscalationDecider
     d = EscalationDecider()
     d.decide(text, intent="delivery_delay", confidence=0.9)
 """
+import json
 import re
+import sys
+from pathlib import Path
 
-RISK_KEYWORDS = [
-    "lawyer", "chargeback", "sue", "legal action", "third time", "again and again",
-    "still not resolved", "no response", "speak to a manager", "unacceptable",
-    "doesn't care", "arrogant", "disgusted", "worst", "never coming back",
+sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
+from src.llm_client import chat
+
+FORCE_ESCALATE_KEYWORDS = [
+    "lawyer", "chargeback", "sue", "legal action", "attorney",
 ]
 
-HIGH_STAKES_INTENTS = {"billing_dispute", "customer_discontent"}
-LOW_CONFIDENCE_THRESHOLD = 0.5
+SYSTEM_PROMPT = """You decide whether an incoming customer support tweet should be
+auto-handled by a bot or escalated to a human agent.
+
+Escalate to a human when: the issue is unresolved after repeated contact, the customer
+shows real anger or frustration (not just a routine complaint), there's ambiguity a wrong
+auto-reply could make worse, or the message involves billing/legal/safety risk.
+
+Auto-handle when: it's a routine question, a first-time standard complaint with an obvious
+resolution path, or positive/neutral feedback needing no real action.
+
+Respond with ONLY valid JSON, no other text:
+{"escalate": true|false, "reason": "<short specific phrase, not generic>"}
+"""
 
 
 class EscalationDecider:
     def decide(self, customer_text: str, intent: str, confidence: float) -> dict:
         text_lower = customer_text.lower()
-        reasons = []
+        forced_hits = [kw for kw in FORCE_ESCALATE_KEYWORDS if kw in text_lower]
 
-        risk_hits = [kw for kw in RISK_KEYWORDS if kw in text_lower]
-        if risk_hits:
-            reasons.append(f"risk keyword(s) detected: {risk_hits}")
+        try:
+            prompt = f"Customer tweet (classified intent: {intent}): {customer_text}"
+            raw = chat(prompt=prompt, system=SYSTEM_PROMPT, temperature=0.0)
+            raw = re.sub(r"^```(json)?|```$", "", raw.strip(), flags=re.MULTILINE).strip()
+            result = json.loads(raw)
+            escalate = bool(result.get("escalate", False))
+            reason = str(result.get("reason", "")).strip()
+        except Exception as e:
+            escalate, reason = False, f"[LLM error, defaulted to no escalation: {e}]"
 
-        if re.search(r"[A-Z]{4,}", customer_text):
-            reasons.append("shouting/all-caps detected")
+        if forced_hits and not escalate:
+            escalate = True
+            reason = f"safety-net override — red-flag term(s) detected: {forced_hits}"
+        elif forced_hits:
+            reason = f"{reason} (also matched red-flag term(s): {forced_hits})"
 
-        if confidence < LOW_CONFIDENCE_THRESHOLD:
-            reasons.append(f"low classifier confidence ({confidence:.2f})")
-
-        if intent in HIGH_STAKES_INTENTS and confidence < 0.7:
-            reasons.append(f"high-stakes intent '{intent}' with moderate confidence")
-
-        should_escalate = len(reasons) > 0
-        final_reason = "; ".join(reasons) if reasons else "routine message, no risk signals, confident classification"
-
-        return {"escalate": should_escalate, "escalation_reason": final_reason}
+        return {"escalate": escalate, "escalation_reason": reason}
 
 
 if __name__ == "__main__":
@@ -52,6 +72,7 @@ if __name__ == "__main__":
         ("my order is a bit late", "delivery_delay", 0.9),
         ("THIS IS THE THIRD TIME, I want a lawyer involved NOW", "customer_discontent", 0.85),
         ("does this include 2 day shipping?", "product_or_shipping_inquiry", 0.95),
+        ("still no response, this is ridiculous, third time contacting you", "customer_discontent", 0.8),
     ]
     for text, intent, conf in tests:
         print(f"\nInput: {text}")

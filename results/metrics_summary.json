@@ -16,5 +16,14 @@
     "escalation_precision": 0.7561,
     "escalation_recall": 0.2605,
     "escalation_f1": 0.3875
+  },
+  {
+    "system_name": "ai_agent",
+    "n_examples": 200,
+    "intent_accuracy": 0.665,
+    "intent_macro_f1": 0.6275,
+    "escalation_precision": 0.837,
+    "escalation_recall": 0.9496,
+    "escalation_f1": 0.8898
   }
 ]
